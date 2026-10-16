@@ -1,0 +1,85 @@
+services:
+  api:
+    build: .
+    env_file: .env
+
+    environment:
+      DATABASE_URL: postgresql+psycopg://docanalyzer:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/docanalyzer
+      QDRANT_URL: http://qdrant:6333
+      REDIS_URL: redis://redis:6379/0
+      DATA_DIR: /app/data
+
+    ports:
+      - "127.0.0.1:8000:8000"
+
+    volumes:
+      - documents:/app/data
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      redis:
+        condition: service_started
+
+    restart: unless-stopped
+
+  ui:
+    build: .
+
+    command:
+      - streamlit
+      - run
+      - app.py
+      - --server.address=0.0.0.0
+      - --server.port=8501
+
+    environment:
+      API_BASE_URL: http://api:8000
+
+    ports:
+      - "127.0.0.1:8501:8501"
+
+    depends_on:
+      - api
+
+  postgres:
+    image: postgres:17
+
+    environment:
+      POSTGRES_DB: docanalyzer
+      POSTGRES_USER: docanalyzer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+
+    volumes:
+      - postgres:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U docanalyzer -d docanalyzer
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  qdrant:
+    image: qdrant/qdrant:v1.19.2
+
+    volumes:
+      - qdrant:/qdrant/storage
+
+  redis:
+    image: redis:7-alpine
+
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+
+volumes:
+  documents:
+  postgres:
+  qdrant:
