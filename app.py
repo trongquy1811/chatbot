@@ -8,14 +8,14 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("🤖 Agent Harness Chatbot")
+st.title("\U0001F916 Agent Harness Chatbot")
 st.caption(
     "Kiến trúc Agent Harness · Gemini LLM · Qdrant Vector Search · Redis Cache · PostgreSQL Memory"
 )
 
 API_BASE_URL = os.getenv(
     "API_BASE_URL",
-    "http://localhost:8000",
+    "http://127.0.0.1:8001",
 ).rstrip("/")
 
 
@@ -36,7 +36,7 @@ def api_request(method: str, route: str, token: str | None = None, **kwargs):
         return response
     except httpx.RequestError as exc:
         st.error(
-            f"Không thể kết nối đến Backend tại `{API_BASE_URL}`: {exc}. "
+            f"KhÃ´ng thá»ƒ káº¿t ná»‘i Ä‘áº¿n Backend táº¡i `{API_BASE_URL}`: {exc}. "
             "Vui lòng kiểm tra lại dịch vụ backend."
         )
         st.stop()
@@ -44,12 +44,12 @@ def api_request(method: str, route: str, token: str | None = None, **kwargs):
 
 def show_sources(sources: list[dict]):
     if not sources:
-        st.info("Không có tài liệu tham khảo nào được trích dẫn.")
+        st.info("KhÃ´ng cÃ³ tÃ i liá»‡u tham kháº£o nÃ o Ä‘Æ°á»£c trÃ­ch dáº«n.")
         return
 
     for source in sources:
         st.markdown(
-            f"**📄 {source.get('name', 'Tài liệu')}** (Trang {source.get('page', 1)})"
+            f"**ðŸ“„ {source.get('name', 'TÃ i liá»‡u')}** (Trang {source.get('page', 1)})"
         )
         st.caption(f"Source ID: `{source.get('id', '')}`")
         st.write(source.get("excerpt", ""))
@@ -73,7 +73,7 @@ with st.sidebar:
         for key in ["conversation_id", "document_picker"]:
             st.session_state.pop(key, None)
 
-    # 1. Đăng nhập: kiểm tra Access token thành công trước khi hiển thị chức năng
+    # 1. ÄÄƒng nháº­p: kiá»ƒm tra Access token thÃ nh cÃ´ng trÆ°á»›c khi hiá»ƒn thá»‹ chá»©c nÄƒng
     if not token_input:
         st.warning("Vui lòng nhập Access Token để truy cập hệ thống.")
         st.stop()
@@ -84,7 +84,7 @@ with st.sidebar:
         st.error("❌ Access Token không hợp lệ hoặc đã bị vô hiệu hóa.")
         st.stop()
     elif verify_res.status_code != 200:
-        st.error(f"Lỗi kiểm tra xác thực (HTTP {verify_res.status_code}): {verify_res.text}")
+        st.error(f"Lá»—i kiá»ƒm tra xÃ¡c thá»±c (HTTP {verify_res.status_code}): {verify_res.text}")
         st.stop()
 
     auth_data = verify_res.json()
@@ -104,17 +104,17 @@ with st.sidebar:
     uploaded = st.file_uploader(
         "Tải tài liệu tham khảo",
         type=["pdf", "txt", "md", "markdown", "png", "jpg", "jpeg"],
-        help="Hỗ trợ PDF, Text, Markdown và hình ảnh (OCR tự động).",
+        help="Há»— trá»£ PDF, Text, Markdown vÃ  hÃ¬nh áº£nh (OCR tá»± Ä‘á»™ng).",
     )
 
     analyze_images = st.checkbox(
         "Phân tích toàn bộ hình ảnh trong PDF (OCR)",
         value=False,
-        help="Bật tùy chọn này nếu PDF chứa nhiều biểu đồ hoặc scan hình ảnh.",
+        help="Báº­t tÃ¹y chá»n nÃ y náº¿u PDF chá»©a nhiá»u biá»ƒu Ä‘á»“ hoáº·c scan hÃ¬nh áº£nh.",
     )
 
     if st.button("📤 Tải lên & Xử lý", disabled=uploaded is None):
-        with st.spinner("Đang trích xuất nội dung, chia chunk và lập chỉ mục Qdrant..."):
+        with st.spinner("Äang trÃ­ch xuáº¥t ná»™i dung, chia chunk vÃ  láº­p chá»‰ má»¥c Qdrant..."):
             res = api_request(
                 "POST",
                 "/documents",
@@ -129,11 +129,11 @@ with st.sidebar:
                 },
             )
             if res.status_code == 200:
-                st.success("Tài liệu đã được tải lên và sẵn sàng!")
+                st.success("TÃ i liá»‡u Ä‘Ã£ Ä‘Æ°á»£c táº£i lÃªn vÃ  sáºµn sÃ ng!")
                 st.rerun()
             else:
                 detail = res.json().get("detail", res.text)
-                st.error(f"Tải lên thất bại ({res.status_code}): {detail}")
+                st.error(f"Táº£i lÃªn tháº¥t báº¡i ({res.status_code}): {detail}")
 
     # Fetch documents list
     doc_res = api_request("GET", "/documents", token=token)
@@ -142,33 +142,33 @@ with st.sidebar:
     ready_docs = {d["id"]: d for d in documents if d["status"] == "ready"}
 
     selected_documents = st.multiselect(
-        "Chọn tài liệu cho câu hỏi:",
+        "Chá»n tÃ i liá»‡u cho cÃ¢u há»i:",
         options=list(ready_docs.keys()),
         format_func=lambda did: ready_docs[did]["name"],
         key="document_picker",
     )
 
-    with st.expander(f"Danh sách tài liệu ({len(documents)})"):
+    with st.expander(f"Danh sÃ¡ch tÃ i liá»‡u ({len(documents)})"):
         for doc in documents:
-            status_badge = "✅" if doc["status"] == "ready" else "⏳" if doc["status"] == "processing" else "❌"
+            status_badge = "âœ…" if doc["status"] == "ready" else "â³" if doc["status"] == "processing" else "âŒ"
             st.markdown(f"{status_badge} **{doc['name']}** ({doc['chunks']} chunks)")
-            if st.button("🗑️ Xóa", key=f"del_doc_{doc['id']}"):
+            if st.button("ðŸ—‘ï¸ XÃ³a", key=f"del_doc_{doc['id']}"):
                 del_res = api_request("DELETE", f"/documents/{doc['id']}", token=token)
                 if del_res.status_code == 200:
                     st.session_state.pop("document_picker", None)
                     st.rerun()
                 else:
-                    st.error("Không thể xóa tài liệu.")
+                    st.error("KhÃ´ng thá»ƒ xÃ³a tÃ i liá»‡u.")
 
     st.divider()
     st.header("💬 Hội thoại")
 
-    if st.button("➕ Hội thoại mới"):
+    if st.button("âž• Há»™i thoáº¡i má»›i"):
         new_conv = api_request(
             "POST",
             "/conversations",
             token=token,
-            json={"title": "Hội thoại mới"},
+            json={"title": "Há»™i thoáº¡i má»›i"},
         )
         if new_conv.status_code == 200:
             st.session_state.conversation_id = new_conv.json()["id"]
@@ -182,7 +182,7 @@ with st.sidebar:
             "POST",
             "/conversations",
             token=token,
-            json={"title": "Hội thoại mặc định"},
+            json={"title": "Há»™i thoáº¡i máº·c Ä‘á»‹nh"},
         )
         if initial_conv.status_code == 200:
             st.session_state.conversation_id = initial_conv.json()["id"]
@@ -196,7 +196,7 @@ with st.sidebar:
     sel_idx = conv_ids.index(curr_cid) if curr_cid in conv_ids else 0
 
     conversation_id = st.selectbox(
-        "Chọn cuộc hội thoại:",
+        "Chá»n cuá»™c há»™i thoáº¡i:",
         options=conv_ids,
         index=sel_idx if conv_ids else 0,
         format_func=lambda cid: f"{conv_lookup[cid]} ({cid[:6]})",
@@ -207,7 +207,7 @@ with st.sidebar:
     remember_toggle = st.checkbox(
         "🧠 Cho phép ghi nhớ thông tin (Memory)",
         value=False,
-        help="Khi bật, AI sẽ trích xuất facts từ câu hỏi để lưu vào bộ nhớ dài hạn.",
+        help="Khi báº­t, AI sáº½ trÃ­ch xuáº¥t facts tá»« cÃ¢u há»i Ä‘á»ƒ lÆ°u vÃ o bá»™ nhá»› dÃ i háº¡n.",
     )
 
 
@@ -234,17 +234,17 @@ with chat_tab:
             with st.chat_message(role):
                 st.markdown(content)
                 if sources:
-                    with st.expander(f"📚 Nguồn trích dẫn ({len(sources)})"):
+                    with st.expander(f"ðŸ“š Nguá»“n trÃ­ch dáº«n ({len(sources)})"):
                         show_sources(sources)
 
-    question = st.chat_input("Nhập câu hỏi của bạn về tài liệu đã chọn...")
+    question = st.chat_input("Nháº­p cÃ¢u há»i cá»§a báº¡n vá» tÃ i liá»‡u Ä‘Ã£ chá»n...")
 
     if question:
         with st.chat_message("user"):
             st.write(question)
 
         with st.chat_message("assistant"):
-            with st.spinner("Agent Harness đang suy luận và tìm kiếm tri thức..."):
+            with st.spinner("Agent Harness Ä‘ang suy luáº­n vÃ  tÃ¬m kiáº¿m tri thá»©c..."):
                 chat_res = api_request(
                     "POST",
                     "/chat",
@@ -262,32 +262,31 @@ with chat_tab:
                     st.markdown(data["answer"])
 
                     if data.get("sources"):
-                        with st.expander(f"📚 Nguồn trích dẫn ({len(data['sources'])})"):
+                        with st.expander(f"ðŸ“š Nguá»“n trÃ­ch dáº«n ({len(data['sources'])})"):
                             show_sources(data["sources"])
 
                     memory_info = data.get("memory", {})
                     if memory_info.get("conflicts", 0) > 0:
                         st.warning(
-                            f"⚠️ Phát hiện {memory_info['conflicts']} thông tin mâu thuẫn với bộ nhớ cũ! "
+                            f"⚠️ PhÃ¡t hiá»‡n {memory_info['conflicts']} thÃ´ng tin mÃ¢u thuáº«n vá»›i bá»™ nhá»› cÅ©! "
                             "Vui lòng chuyển sang tab 'Quản lý Bộ nhớ' để xác nhận."
                         )
 
                     if memory_info.get("status") == "failed":
-                        st.info("Câu trả lời đã lưu, nhưng quá trình cập nhật bộ nhớ gặp trục trặc.")
+                        st.info("CÃ¢u tráº£ lá»i Ä‘Ã£ lÆ°u, nhÆ°ng quÃ¡ trÃ¬nh cáº­p nháº­t bá»™ nhá»› gáº·p trá»¥c tráº·c.")
 
-                    with st.expander("🔍 Chi tiết quan sát (Observability / Trace)"):
+                    with st.expander("ðŸ” Chi tiáº¿t quan sÃ¡t (Observability / Trace)"):
                         st.caption(f"Trace ID: `{data.get('trace_id')}`")
                         st.json(data.get("trace", []))
                 else:
                     detail = chat_res.json().get("detail", chat_res.text)
-                    st.error(f"Xử lý thất bại (HTTP {chat_res.status_code}): {detail}")
+                    st.error(f"Xá»­ lÃ½ tháº¥t báº¡i (HTTP {chat_res.status_code}): {detail}")
 
 
 with memory_tab:
     st.subheader("Trí nhớ dài hạn cá nhân (Long-term Memory)")
     st.caption(
-        "Bộ nhớ lưu trữ các thông tin và sở thích người dùng xuyên suốt các phiên hội thoại. "
-        "Mọi mâu thuẫn thông tin phải được bạn xác nhận trước khi cập nhật."
+        "Bộ nhớ lưu trữ thông tin và sở thích. Những thông tin mâu thuẫn cần được bạn xác nhận trước khi cập nhật."
     )
 
     mem_res = api_request("GET", "/memories", token=token)
@@ -302,8 +301,8 @@ with memory_tab:
             # Check for conflict
             if mem.get("pending_value"):
                 st.warning(
-                    f"⚠️ **Xung đột bộ nhớ:** Phát hiện thông tin mới: `{mem['pending_value']}`. "
-                    "Bạn muốn giữ thông tin cũ hay dùng thông tin mới?"
+                    f"⚠️ **Xung Ä‘á»™t bá»™ nhá»›:** PhÃ¡t hiá»‡n thÃ´ng tin má»›i: `{mem['pending_value']}`. "
+                    "Báº¡n muá»‘n giá»¯ thÃ´ng tin cÅ© hay dÃ¹ng thÃ´ng tin má»›i?"
                 )
                 col1, col2 = st.columns(2)
                 with col1:
