@@ -34,3 +34,20 @@ Thumbs.db
 
 # Streamlit local state
 .streamlit/secrets.toml
+.env
+.env.*
+!.env.example
+.venv/
+.venv-*/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/
+uploads/
+*.db
+*.db-shm
+*.db-wal
+*.log
+*.bak
+.streamlit/secrets.toml

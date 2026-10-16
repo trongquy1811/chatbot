@@ -1,13 +1,14 @@
+﻿import json
 import os
-import sys
+from pathlib import Path
+from urllib.parse import urlsplit
+
 import httpx
 import streamlit as st
+from dotenv import dotenv_values
 
-# Auto-launch with streamlit if user accidentally ran `python app.py` directly in console
-if __name__ == "__main__" and "streamlit.runtime" not in sys.modules and not os.environ.get("STREAMLIT_SERVER_PORT"):
-    import subprocess
-    cmd = [sys.executable, "-m", "streamlit", "run", os.path.abspath(__file__)] + sys.argv[1:]
-    sys.exit(subprocess.call(cmd))
+
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 st.set_page_config(
     page_title="Agent Harness Chatbot",
@@ -15,135 +16,280 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("🤖 Agent Harness Chatbot")
-st.caption(
-    "Kiến trúc Agent Harness · Gemini LLM · Qdrant Vector Search · Redis Cache · PostgreSQL Memory"
-)
 
-# API URL: support environment variable, default to http://127.0.0.1:8000
-DEFAULT_API_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+def local_config():
+    return dotenv_values(
+        PROJECT_ROOT / ".env",
+        encoding="utf-8-sig",
+        interpolate=False,
+    )
 
 
-def api_request(base_url: str, method: str, route: str, token: str | None = None, **kwargs):
-    """Perform HTTP request to backend with error handling."""
-    headers = kwargs.pop("headers", {})
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+def is_local_url(url):
+    try:
+        parsed = urlsplit(url)
+        return (
+            parsed.scheme == "http"
+            and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+            and parsed.username is None
+            and parsed.password is None
+        )
+    except ValueError:
+        return False
+
+
+def default_local_token(api_url):
+    """Chỉ tự điền token khi bật chế độ local và gọi backend local."""
+    config = local_config()
+    enabled = os.getenv(
+        "LOCAL_AUTO_LOGIN",
+        config.get("LOCAL_AUTO_LOGIN") or "false",
+    ).lower() in {"true", "1", "yes"}
+
+    if not enabled or not is_local_url(api_url):
+        return ""
+
+    raw = os.getenv(
+        "API_KEYS_JSON",
+        config.get("API_KEYS_JSON") or "{}",
+    )
+
+    try:
+        tokens = json.loads(raw)
+        if isinstance(tokens, dict):
+            return next(
+                (
+                    token
+                    for token in tokens
+                    if isinstance(token, str) and len(token) >= 24
+                ),
+                "",
+            )
+    except (TypeError, ValueError):
+        pass
+
+    return ""
+
+
+def error_detail(response):
+    try:
+        payload = response.json()
+    except ValueError:
+        return f"Backend trả về HTTP {response.status_code}."
+
+    detail = (
+        payload.get("detail", payload)
+        if isinstance(payload, dict)
+        else payload
+    )
+
+    if isinstance(detail, dict):
+        message = detail.get("message", "Yêu cầu thất bại.")
+        trace_id = detail.get("trace_id")
+        if trace_id:
+            message += f"\n\nTrace ID: {trace_id}"
+        return message
+
+    if isinstance(detail, list):
+        return "Dữ liệu gửi lên không hợp lệ. Kiểm tra các trường nhập."
+
+    return str(detail)
+
+
+def request_api(api_url, token, method, route, **kwargs):
+    timeout = 300 if route in {"/documents", "/chat"} and method == "POST" else 20
 
     try:
         response = httpx.request(
             method,
-            f"{base_url}{route}",
-            headers=headers,
-            timeout=120.0,
+            api_url + route,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=httpx.Timeout(timeout, connect=5),
+            # Tránh proxy hệ thống can thiệp kết nối localhost.
+            trust_env=not is_local_url(api_url),
+            follow_redirects=False,
             **kwargs,
         )
-        return response
-    except httpx.RequestError as exc:
+    except httpx.TimeoutException:
         st.error(
-            f"❌ Không thể kết nối đến Backend tại `{base_url}`: {exc}. "
-            "Vui lòng đảm bảo rằng Backend API đang chạy (ví dụ: `uvicorn backend.main:app --port 8000`)."
+            "Backend phản hồi quá thời gian chờ. "
+            "Kiểm tra terminal backend trước khi gửi lại; "
+            "yêu cầu trước có thể vẫn đang xử lý."
         )
         st.stop()
+    except httpx.RequestError:
+        st.error(
+            f"Không kết nối được backend tại {api_url}. "
+            "Kiểm tra backend đang chạy và đúng cổng."
+        )
+        st.stop()
+
+    if response.status_code == 401:
+        st.error(
+            "Access token không hợp lệ. Kiểm tra API_KEYS_JSON "
+            "và khởi động lại backend sau khi đổi .env."
+        )
+        st.stop()
+
+    if not response.is_success:
+        st.error(
+            f"Yêu cầu thất bại (HTTP {response.status_code}): "
+            f"{error_detail(response)}"
+        )
+        st.stop()
+
+    if response.status_code == 204:
         return None
 
+    try:
+        return response.json()
+    except ValueError:
+        st.error("Backend trả về dữ liệu không đúng định dạng JSON.")
+        st.stop()
 
-def show_sources(sources: list[dict]):
+
+def show_sources(sources):
     if not sources:
-        st.info("Không có tài liệu tham khảo nào được trích dẫn.")
+        st.info("Không có nguồn trích dẫn được trả về.")
         return
 
     for source in sources:
-        st.markdown(
-            f"**📄 {source.get('name', 'Tài liệu')}** (Trang {source.get('page', 1)})"
+        st.write(
+            f"📄 {source.get('name', 'Tài liệu')} "
+            f"· trang {source.get('page', '?')}"
         )
-        st.caption(f"Source ID: `{source.get('id', '')}`")
+        st.caption(f"Source ID: {source.get('id', '')}")
         st.write(source.get("excerpt", ""))
         st.divider()
 
 
+def flash(message):
+    st.session_state["notice"] = message
+    st.rerun()
+
+
 def main():
-    # ==========================================
-    # SIDEBAR: CONNECTION & AUTHENTICATION
-    # ==========================================
+    st.title("🤖 Agent Harness Chatbot")
+    st.caption("Hỏi đáp tài liệu · Nguồn trích dẫn · Bộ nhớ hội thoại")
+
+    config = local_config()
+    default_url = os.getenv(
+        "API_BASE_URL",
+        config.get("API_BASE_URL") or "http://127.0.0.1:8000",
+    )
+
     with st.sidebar:
         st.header("⚙️ Kết nối & Xác thực")
 
         api_url = st.text_input(
             "Backend API URL",
-            value=DEFAULT_API_URL,
-            help="Địa chỉ FastAPI Backend server",
-        ).rstrip("/")
+            value=default_url,
+        ).strip().rstrip("/")
 
-        # Default demo token from config for easy local testing
-        default_token = "sec_tok_0123456789abcdef0123456789"
-        token_input = st.text_input(
-            "Nhập Access Token",
-            value=st.session_state.get("auth_token", default_token),
+        try:
+            parsed = urlsplit(api_url)
+            valid_url = (
+                parsed.scheme in {"http", "https"}
+                and bool(parsed.hostname)
+                and parsed.username is None
+                and parsed.password is None
+                and not parsed.query
+                and not parsed.fragment
+            )
+        except ValueError:
+            valid_url = False
+
+        if not valid_url:
+            st.warning("Nhập URL hợp lệ, ví dụ http://127.0.0.1:8000.")
+            st.stop()
+
+        # Xóa token trên giao diện khi chuyển sang backend khác.
+        if st.session_state.get("token_backend_url") != api_url:
+            st.session_state["token_backend_url"] = api_url
+            st.session_state.pop("access_token_input", None)
+
+        if not st.session_state.get("access_token_input"):
+            config = local_config()
+            try:
+                tokens = json.loads(config.get("API_KEYS_JSON") or "{}")
+                saved_token = (
+                    next(iter(tokens), "")
+                    if isinstance(tokens, dict)
+                    else ""
+                )
+            except (ValueError, TypeError):
+                saved_token = ""
+
+            st.session_state["access_token_input"] = (
+                saved_token if is_local_url(api_url) else ""
+            )
+
+        token = st.text_input(
+            "Access token",
             type="password",
-            help="Token tối thiểu 24 ký tự. Token mẫu: sec_tok_0123456789abcdef0123456789",
+            key="access_token_input",
+            help="Tự điền token từ file .env khi chạy local.",
         ).strip()
 
-        if st.session_state.get("auth_token") != token_input:
-            st.session_state.auth_token = token_input
-            st.session_state.auth_user = None
-            for key in ["conversation_id", "document_picker"]:
+        if st.button("Đọc lại token local"):
+            st.session_state["reload_local_token"] = True
+            st.rerun()
+
+        if st.session_state.pop("reload_local_token", False):
+            # Cập nhật widget ở lần chạy kế tiếp.
+            st.session_state.pop("access_token_input", None)
+            st.rerun()
+
+        if not token:
+            st.info("Nhập Access token để tiếp tục.")
+            st.stop()
+
+        # Khi đổi backend hoặc token, xóa lựa chọn của tài khoản trước.
+        identity = (api_url, token)
+        if st.session_state.get("current_identity") != identity:
+            for key in (
+                "conversation_picker",
+                "document_picker",
+                "uploaded_document",
+                "notice",
+            ):
                 st.session_state.pop(key, None)
+            st.session_state["current_identity"] = identity
 
-        # 1. Đăng nhập: kiểm tra Access token thành công trước khi hiển thị chức năng
-        if not token_input:
-            st.warning("Vui lòng nhập Access Token để truy cập hệ thống.")
-            st.stop()
-            return
+        auth = request_api(api_url, token, "GET", "/auth/verify")
+        st.success(f"Đã đăng nhập: {auth.get('owner', 'Người dùng')}")
 
-        # Verify token against backend
-        verify_res = api_request(api_url, "GET", "/auth/verify", token=token_input)
-        if verify_res is None:
-            st.stop()
-            return
+    def api(method, route, **kwargs):
+        return request_api(api_url, token, method, route, **kwargs)
 
-        if verify_res.status_code == 401:
-            st.error("❌ Access Token không hợp lệ hoặc chưa được đăng ký trong API_KEYS_JSON.")
-            st.info("💡 Token demo mặc định: `sec_tok_0123456789abcdef0123456789`")
-            st.stop()
-            return
-        elif verify_res.status_code != 200:
-            st.error(f"Lỗi kiểm tra xác thực (HTTP {verify_res.status_code}): {verify_res.text}")
-            st.stop()
-            return
+    if notice := st.session_state.pop("notice", None):
+        st.success(notice)
 
-        auth_data = verify_res.json()
-        st.session_state.auth_user = auth_data.get("owner", "Unknown")
-        st.success(f"Đã đăng nhập: **{st.session_state.auth_user}**")
+    # Chỉ lấy dữ liệu sau khi xác thực thành công.
+    documents = api("GET", "/documents")
+    conversations = api("GET", "/conversations")
 
-    token = st.session_state.auth_token
-
-    # ==========================================
-    # SIDEBAR: DOCUMENTS & CONVERSATIONS
-    # ==========================================
     with st.sidebar:
         st.divider()
-        st.header("📁 Quản lý Tài liệu")
+        st.header("📁 Tài liệu")
 
         uploaded = st.file_uploader(
             "Tải tài liệu tham khảo",
             type=["pdf", "txt", "md", "markdown", "png", "jpg", "jpeg"],
-            help="Hỗ trợ PDF, Text, Markdown và hình ảnh (OCR tự động).",
+            key="uploaded_document",
         )
 
         analyze_images = st.checkbox(
-            "Phân tích toàn bộ hình ảnh trong PDF (OCR)",
+            "Phân tích toàn bộ hình ảnh trong PDF",
             value=False,
-            help="Bật tùy chọn này nếu PDF chứa nhiều biểu đồ hoặc scan hình ảnh.",
+            help="Bật khi cần đọc biểu đồ hoặc hình ảnh; có thể xử lý lâu hơn.",
         )
 
         if st.button("📤 Tải lên & Xử lý", disabled=uploaded is None):
-            with st.spinner("Đang trích xuất nội dung, chia chunk và lập chỉ mục Qdrant..."):
-                res = api_request(
-                    api_url,
+            with st.spinner("Đang đọc và lập chỉ mục tài liệu…"):
+                api(
                     "POST",
                     "/documents",
-                    token=token,
                     params={"analyze_all_images": analyze_images},
                     files={
                         "file": (
@@ -153,218 +299,202 @@ def main():
                         )
                     },
                 )
-                if res and res.status_code == 200:
-                    st.success("Tài liệu đã được tải lên và sẵn sàng!")
-                    st.rerun()
-                elif res:
-                    detail = res.json().get("detail", res.text)
-                    st.error(f"Tải lên thất bại ({res.status_code}): {detail}")
+            flash("Đã xử lý tài liệu.")
 
-        # Fetch documents list
-        doc_res = api_request(api_url, "GET", "/documents", token=token)
-        documents = doc_res.json() if (doc_res and doc_res.status_code == 200) else []
+        ready_docs = {
+            document["id"]: document
+            for document in documents
+            if document["status"] == "ready"
+        }
 
-        ready_docs = {d["id"]: d for d in documents if d["status"] == "ready"}
+        # Loại lựa chọn đã bị xóa hoặc không còn sẵn sàng.
+        if "document_picker" in st.session_state:
+            st.session_state["document_picker"] = [
+                item
+                for item in st.session_state["document_picker"]
+                if item in ready_docs
+            ]
 
         selected_documents = st.multiselect(
-            "Chọn tài liệu cho câu hỏi:",
-            options=list(ready_docs.keys()),
-            format_func=lambda did: ready_docs[did]["name"],
+            "Tài liệu dùng cho câu hỏi",
+            options=list(ready_docs),
+            format_func=lambda item: ready_docs[item]["name"],
             key="document_picker",
         )
 
         with st.expander(f"Danh sách tài liệu ({len(documents)})"):
-            for doc in documents:
-                status_badge = "✅" if doc["status"] == "ready" else "⏳" if doc["status"] == "processing" else "❌"
-                st.markdown(f"{status_badge} **{doc['name']}** ({doc['chunks']} chunks)")
-                if st.button("🗑️ Xóa", key=f"del_doc_{doc['id']}"):
-                    del_res = api_request(api_url, "DELETE", f"/documents/{doc['id']}", token=token)
-                    if del_res and del_res.status_code == 200:
-                        st.session_state.pop("document_picker", None)
-                        st.rerun()
-                    else:
-                        st.error("Không thể xóa tài liệu.")
+            for document in documents:
+                st.write(
+                    f"{document['name']} · {document['status']} "
+                    f"· {document.get('chunks', 0)} chunks"
+                )
+                if st.button(
+                    "Xóa tài liệu",
+                    key=f"delete_document_{document['id']}",
+                ):
+                    api("DELETE", f"/documents/{document['id']}")
+                    flash("Đã xóa tài liệu.")
 
         st.divider()
         st.header("💬 Hội thoại")
 
         if st.button("➕ Hội thoại mới"):
-            new_conv = api_request(
-                api_url,
+            conversation = api(
                 "POST",
                 "/conversations",
-                token=token,
                 json={"title": "Hội thoại mới"},
             )
-            if new_conv and new_conv.status_code == 200:
-                st.session_state.conversation_id = new_conv.json()["id"]
-                st.rerun()
-
-        conv_res = api_request(api_url, "GET", "/conversations", token=token)
-        conversations = conv_res.json() if (conv_res and conv_res.status_code == 200) else []
+            st.session_state["conversation_picker"] = conversation["id"]
+            st.rerun()
 
         if not conversations:
-            initial_conv = api_request(
-                api_url,
+            conversation = api(
                 "POST",
                 "/conversations",
-                token=token,
-                json={"title": "Hội thoại mặc định"},
+                json={"title": "Hội thoại đầu tiên"},
             )
-            if initial_conv and initial_conv.status_code == 200:
-                st.session_state.conversation_id = initial_conv.json()["id"]
-                st.rerun()
-            conversations = []
+            st.session_state["conversation_picker"] = conversation["id"]
+            st.rerun()
 
-        conv_lookup = {c["id"]: c["title"] for c in conversations}
-        conv_ids = list(conv_lookup.keys())
+        lookup = {
+            conversation["id"]: conversation["title"]
+            for conversation in conversations
+        }
 
-        curr_cid = st.session_state.get("conversation_id")
-        sel_idx = conv_ids.index(curr_cid) if curr_cid in conv_ids else 0
+        if st.session_state.get("conversation_picker") not in lookup:
+            st.session_state["conversation_picker"] = next(iter(lookup))
 
         conversation_id = st.selectbox(
-            "Chọn cuộc hội thoại:",
-            options=conv_ids,
-            index=sel_idx if conv_ids else 0,
-            format_func=lambda cid: f"{conv_lookup[cid]} ({cid[:6]})",
+            "Chọn hội thoại",
+            options=list(lookup),
+            format_func=lambda item: f"{lookup[item]} ({item[:6]})",
+            key="conversation_picker",
         )
-        st.session_state.conversation_id = conversation_id
 
-        st.divider()
-        remember_toggle = st.checkbox(
-            "🧠 Cho phép ghi nhớ thông tin (Memory)",
+        remember = st.checkbox(
+            "Cho phép ghi nhớ thông tin tôi yêu cầu lưu",
             value=False,
-            help="Khi bật, AI sẽ trích xuất facts từ câu hỏi để lưu vào bộ nhớ dài hạn.",
+            help=(
+                "Thông tin cá nhân mâu thuẫn cần được xác nhận "
+                "trong tab Bộ nhớ."
+            ),
         )
 
-    # ==========================================
-    # MAIN INTERFACE TABS
-    # ==========================================
-    chat_tab, memory_tab = st.tabs(["💬 Hỏi đáp RAG", "🧠 Quản lý Bộ nhớ"])
+    chat_tab, memory_tab = st.tabs(["💬 Hỏi đáp", "🧠 Bộ nhớ"])
 
     with chat_tab:
-        # Load conversation history
-        if conversation_id:
-            msg_res = api_request(
-                api_url,
-                "GET",
-                f"/conversations/{conversation_id}/messages",
-                token=token,
+        history = api(
+            "GET",
+            f"/conversations/{conversation_id}/messages",
+        )
+
+        for message in history:
+            role = message.get("role", "assistant")
+            if role not in {"user", "assistant"}:
+                role = "assistant"
+
+            with st.chat_message(role):
+                st.markdown(message.get("content", ""))
+                if message.get("sources"):
+                    with st.expander("Nguồn trích dẫn"):
+                        show_sources(message["sources"])
+
+        if not selected_documents:
+            st.caption(
+                "Chọn tài liệu ở thanh bên để hỏi về nội dung tài liệu."
             )
-            history = msg_res.json() if (msg_res and msg_res.status_code == 200) else []
 
-            for msg in history:
-                role = msg["role"]
-                content = msg["content"]
-                sources = msg.get("sources", [])
+        question = st.chat_input("Nhập câu hỏi…")
 
-                with st.chat_message(role):
-                    st.markdown(content)
-                    if sources:
-                        with st.expander(f"📚 Nguồn trích dẫn ({len(sources)})"):
-                            show_sources(sources)
-
-        question = st.chat_input("Nhập câu hỏi của bạn về tài liệu đã chọn...")
-
-        if question:
+        if question and question.strip():
             with st.chat_message("user"):
                 st.write(question)
 
             with st.chat_message("assistant"):
-                with st.spinner("Agent Harness đang suy luận và tìm kiếm tri thức..."):
-                    chat_res = api_request(
-                        api_url,
+                with st.spinner("Đang tìm kiếm và trả lời…"):
+                    result = api(
                         "POST",
                         "/chat",
-                        token=token,
                         json={
-                            "question": question,
+                            "question": question.strip(),
                             "conversation_id": conversation_id,
                             "document_ids": selected_documents,
-                            "remember": remember_toggle,
+                            "remember": remember,
                         },
                     )
 
-                    if chat_res and chat_res.status_code == 200:
-                        data = chat_res.json()
-                        st.markdown(data["answer"])
+                st.markdown(result["answer"])
 
-                        if data.get("sources"):
-                            with st.expander(f"📚 Nguồn trích dẫn ({len(data['sources'])})"):
-                                show_sources(data["sources"])
+                if result.get("sources"):
+                    with st.expander("Nguồn trích dẫn"):
+                        show_sources(result["sources"])
 
-                        memory_info = data.get("memory", {})
-                        if memory_info.get("conflicts", 0) > 0:
-                            st.warning(
-                                f"⚠️ Phát hiện {memory_info['conflicts']} thông tin mâu thuẫn với bộ nhớ cũ! "
-                                "Vui lòng chuyển sang tab 'Quản lý Bộ nhớ' để xác nhận."
-                            )
+                memory_info = result.get("memory") or {}
+                if memory_info.get("conflicts"):
+                    st.warning(
+                        "Có thông tin bộ nhớ mâu thuẫn. "
+                        "Mở tab Bộ nhớ để xác nhận."
+                    )
 
-                        if memory_info.get("status") == "failed":
-                            st.info("Câu trả lời đã lưu, nhưng quá trình cập nhật bộ nhớ gặp trục trặc.")
+                if memory_info.get("status") == "failed":
+                    st.warning(
+                        "Câu trả lời đã lưu nhưng cập nhật bộ nhớ thất bại."
+                    )
 
-                        with st.expander("🔍 Chi tiết quan sát (Observability / Trace)"):
-                            st.caption(f"Trace ID: `{data.get('trace_id')}`")
-                            st.json(data.get("trace", []))
-                    elif chat_res:
-                        detail = chat_res.json().get("detail", chat_res.text)
-                        st.error(f"Xử lý thất bại (HTTP {chat_res.status_code}): {detail}")
+                with st.expander("Chi tiết xử lý"):
+                    st.caption(f"Trace ID: {result.get('trace_id', '')}")
+                    st.json(result.get("trace", []))
 
     with memory_tab:
-        st.subheader("Trí nhớ dài hạn cá nhân (Long-term Memory)")
+        st.subheader("Bộ nhớ cá nhân")
         st.caption(
-            "Bộ nhớ lưu trữ các thông tin và sở thích người dùng xuyên suốt các phiên hội thoại. "
-            "Mọi mâu thuẫn thông tin phải được bạn xác nhận trước khi cập nhật."
+            "Thông tin mâu thuẫn chỉ thay thế bộ nhớ cũ sau khi bạn xác nhận."
         )
 
-        mem_res = api_request(api_url, "GET", "/memories", token=token)
-        memories = mem_res.json() if (mem_res and mem_res.status_code == 200) else []
-
+        memories = api("GET", "/memories")
         if not memories:
-            st.info("Chưa có thông tin nào được lưu trong bộ nhớ.")
-        else:
-            for mem in memories:
-                st.markdown(f"**🔑 {mem['key']}**: `{mem['value']}` (Phiên bản: v{mem['version']})")
+            st.info("Chưa có thông tin được ghi nhớ.")
 
-                # Check for conflict
-                if mem.get("pending_value"):
-                    st.warning(
-                        f"⚠️ **Xung đột bộ nhớ:** Phát hiện thông tin mới: `{mem['pending_value']}`. "
-                        "Bạn muốn giữ thông tin cũ hay dùng thông tin mới?"
+        for memory in memories:
+            st.write(
+                f"{memory['key']}: {memory['value']} "
+                f"· phiên bản {memory.get('version', 1)}"
+            )
+
+            if memory.get("pending_value") is not None:
+                st.warning(f"Thông tin mới: {memory['pending_value']}")
+                accept_column, reject_column = st.columns(2)
+
+                if accept_column.button(
+                    "Dùng thông tin mới",
+                    key=f"accept_memory_{memory['id']}",
+                ):
+                    api(
+                        "POST",
+                        f"/memories/{memory['id']}/resolve",
+                        json={"accept": True},
                     )
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("✅ Dùng thông tin mới", key=f"acc_{mem['id']}"):
-                            resolve_res = api_request(
-                                api_url,
-                                "POST",
-                                f"/memories/{mem['id']}/resolve",
-                                token=token,
-                                json={"accept": True},
-                            )
-                            if resolve_res and resolve_res.status_code == 200:
-                                st.success("Đã cập nhật thông tin mới!")
-                                st.rerun()
-                    with col2:
-                        if st.button("❌ Giữ thông tin cũ", key=f"rej_{mem['id']}"):
-                            resolve_res = api_request(
-                                api_url,
-                                "POST",
-                                f"/memories/{mem['id']}/resolve",
-                                token=token,
-                                json={"accept": False},
-                            )
-                            if resolve_res and resolve_res.status_code == 200:
-                                st.info("Đã giữ lại thông tin cũ.")
-                                st.rerun()
+                    flash("Đã chấp nhận thông tin mới.")
 
-                if st.button("🗑️ Quên thông tin này", key=f"del_mem_{mem['id']}"):
-                    del_res = api_request(api_url, "DELETE", f"/memories/{mem['id']}", token=token)
-                    if del_res and del_res.status_code == 200:
-                        st.success("Đã xóa khỏi bộ nhớ!")
-                        st.rerun()
+                if reject_column.button(
+                    "Giữ thông tin cũ",
+                    key=f"reject_memory_{memory['id']}",
+                ):
+                    api(
+                        "POST",
+                        f"/memories/{memory['id']}/resolve",
+                        json={"accept": False},
+                    )
+                    flash("Đã giữ thông tin cũ.")
 
-                st.divider()
+            if st.button(
+                "Quên thông tin này",
+                key=f"delete_memory_{memory['id']}",
+            ):
+                api("DELETE", f"/memories/{memory['id']}")
+                flash("Đã xóa bộ nhớ.")
+
+            st.divider()
 
 
 if __name__ == "__main__":
