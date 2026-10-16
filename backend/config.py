@@ -4,17 +4,21 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Base directory for stable resolution of .env and data directory
+BASE_DIR = Path(__file__).resolve().parent.parent
+ENV_PATH = BASE_DIR / ".env"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
+        env_file=ENV_PATH,
+        env_file_encoding="utf-8-sig",  # Supports both UTF-8 and UTF-8 BOM from PowerShell
         extra="ignore",
     )
 
     # Database
-    database_url: str = "sqlite:///./data/docanalyzer.db"
-    data_dir: Path = Path("data")
+    database_url: str = f"sqlite:///{BASE_DIR / 'data' / 'docanalyzer.db'}"
+    data_dir: Path = BASE_DIR / "data"
 
     # Qdrant Vector Store
     qdrant_url: str = ""
@@ -25,8 +29,8 @@ class Settings(BaseSettings):
     # Redis Cache & Sessions
     redis_url: str = ""
 
-    # Security & Auth
-    api_keys_json: str = '{"sec_tok_0123456789abcdef0123456789": "demo_user"}'
+    # Security & Auth (No hardcoded default token)
+    api_keys_json: str = ""
 
     # Google Gemini AI
     google_api_key: str = ""
@@ -44,31 +48,34 @@ class Settings(BaseSettings):
 
     def keys(self) -> dict[str, str]:
         """Validate and return parsed API tokens mapping to owner identities."""
+        if not self.api_keys_json or not self.api_keys_json.strip():
+            raise ValueError(
+                "Biến API_KEYS_JSON chưa được thiết lập trong file .env hoặc môi trường."
+            )
+
         try:
-            keys = json.loads(self.api_keys_json)
+            parsed = json.loads(self.api_keys_json)
         except Exception as exc:
             raise ValueError(
-                "API_KEYS_JSON must be a valid JSON object string"
+                f"API_KEYS_JSON không phải là chuỗi JSON hợp lệ: {exc}"
             ) from exc
 
-        invalid = (
-            not isinstance(keys, dict)
-            or not keys
-            or any(
-                not isinstance(token, str)
-                or len(token) < 24
-                or not isinstance(owner, str)
-                or not owner
-                for token, owner in keys.items()
-            )
-        )
-
-        if invalid:
+        if not isinstance(parsed, dict) or not parsed:
             raise ValueError(
-                "API_KEYS_JSON must map tokens (24+ characters) to user IDs"
+                'API_KEYS_JSON phải là một JSON Object dạng: {"<token_24_ky_tu_tro_len>": "<user_id>"}'
             )
 
-        return keys
+        for token, owner in parsed.items():
+            if not isinstance(token, str) or len(token) < 24:
+                raise ValueError(
+                    f"Token '{token[:6]}...' không hợp lệ. Mỗi token bắt buộc phải là chuỗi từ 24 ký tự trở lên."
+                )
+            if not isinstance(owner, str) or not owner.strip():
+                raise ValueError(
+                    f"User ID liên kết với token '{token[:6]}...' không được để trống."
+                )
+
+        return parsed
 
 
 @lru_cache()

@@ -36,9 +36,9 @@ def create_app(
 
         try:
             keys = cfg.keys()
-        except Exception:
-            keys = {}
-            logger.warning("Starting with empty or unconfigured API_KEYS_JSON")
+        except Exception as exc:
+            logger.error("LỖI CẤU HÌNH KHỞI ĐỘNG: %s", exc)
+            raise RuntimeError(f"Khởi động thất bại do cấu hình: {exc}") from exc
 
         engine = get_engine(cfg)
         init_db(engine)
