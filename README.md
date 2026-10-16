@@ -173,16 +173,23 @@ docker compose up -d --build
 
 ### 3. Chạy cục bộ (Local Development)
 
-Nếu muốn chạy trực tiếp bằng môi trường Python local:
-
+#### Cách 1: Khởi động nhanh cả Backend và UI bằng 1 lệnh duy nhất (Khuyên dùng)
 ```bash
-# 1. Cài đặt thư viện
+python run.py
+```
+*(Trên Windows, bạn cũng có thể nhấp đúp trực tiếp vào file `start.bat`)*
+
+Script sẽ tự động khởi động FastAPI Backend (port 8000), kiểm tra health check, sau đó mở Streamlit UI (port 8501).
+
+#### Cách 2: Khởi động thủ công riêng biệt
+```bash
+# 1. Cài đặt thư viện (nếu chưa cài)
 pip install -r requirements.txt
 
-# 2. Khởi chạy Backend API
+# 2. Khởi chạy Backend API (Terminal 1)
 uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
 
-# 3. Khởi chạy Giao diện Streamlit (mở terminal mới)
+# 3. Khởi chạy Giao diện Streamlit (Terminal 2)
 streamlit run app.py
 ```
 

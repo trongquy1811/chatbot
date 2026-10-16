@@ -80,6 +80,12 @@ def chat_endpoint(
     vectors = request.app.state.vectors
     cache = request.app.state.cache
 
+    if ai is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Chưa cấu hình GOOGLE_API_KEY trong file .env hoặc biến môi trường. Vui lòng thiết lập GOOGLE_API_KEY để sử dụng dịch vụ AI.",
+        )
+
     # 5. Run Agent Harness
     try:
         result = run_agent(

@@ -1,10 +1,12 @@
 services:
   api:
     build: .
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
 
     environment:
-      DATABASE_URL: postgresql+psycopg://docanalyzer:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/docanalyzer
+      DATABASE_URL: postgresql+psycopg://docanalyzer:${POSTGRES_PASSWORD:-docanalyzer_secret_pw}@postgres:5432/docanalyzer
       QDRANT_URL: http://qdrant:6333
       REDIS_URL: redis://redis:6379/0
       DATA_DIR: /app/data
@@ -51,7 +53,7 @@ services:
     environment:
       POSTGRES_DB: docanalyzer
       POSTGRES_USER: docanalyzer
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docanalyzer_secret_pw}
 
     volumes:
       - postgres:/var/lib/postgresql/data

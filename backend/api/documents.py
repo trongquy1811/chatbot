@@ -47,6 +47,12 @@ async def upload_document(
     ai = request.app.state.ai
     vectors = request.app.state.vectors
 
+    if ai is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Chưa cấu hình GOOGLE_API_KEY trong file .env hoặc biến môi trường. Vui lòng thiết lập GOOGLE_API_KEY để xử lý tài liệu.",
+        )
+
     filename = (file.filename or "document").replace("\\", "/")
     name = Path(filename).name[:255]
 

@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     redis_url: str = ""
 
     # Security & Auth
-    api_keys_json: str = "{}"
+    api_keys_json: str = '{"sec_tok_0123456789abcdef0123456789": "demo_user"}'
 
     # Google Gemini AI
     google_api_key: str = ""
