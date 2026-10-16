@@ -1,0 +1,29 @@
+app = "docanalyzer-ui"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8501"
+
+[experimental]
+  cmd = ["streamlit", "run", "app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+
+[http_service]
+  internal_port = 8501
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[http_service.checks]]
+  grace_period = "15s"
+  interval = "30s"
+  method = "GET"
+  timeout = "5s"
+  path = "/_stcore/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

@@ -44,9 +44,10 @@ services:
     depends_on:
       - api
 
+    restart: unless-stopped
+
   postgres:
     image: postgres:17
-
     environment:
       POSTGRES_DB: docanalyzer
       POSTGRES_USER: docanalyzer
@@ -65,13 +66,11 @@ services:
 
   qdrant:
     image: qdrant/qdrant:v1.19.2
-
     volumes:
       - qdrant:/qdrant/storage
 
   redis:
     image: redis:7-alpine
-
     command:
       - redis-server
       - --save

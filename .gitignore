@@ -1,9 +1,36 @@
-@'
-.venv/
+# Environment variables & secrets
 .env
+.env.*
+!.env.example
+
+# Python virtual environment
+.venv/
+venv/
+env/
+ENV/
+
+# Python bytecode & cache
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+
+# Testing & Coverage
 .pytest_cache/
+.coverage
+htmlcov/
+
+# Local data & uploads
 data/
 uploads/
-'@ | Set-Content -Encoding utf8 .gitignore
+*.db
+*.sqlite3
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Streamlit local state
+.streamlit/secrets.toml
