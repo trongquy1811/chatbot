@@ -1,248 +1,689 @@
 # 🤖 Agent Harness Document AI Chatbot
 
-Hệ thống AI Agent thông minh xây dựng trên nền tảng **Agent Harness Architecture**, kết hợp Mô hình ngôn ngữ lớn (**LLM**) cùng hạ tầng bao bọc (**Harness**) cung cấp các khả năng: **Tools**, **Memory**, **Execution Environment**, **Guardrails**, và **Observability**.
+An AI-powered document analysis and question-answering application built with **Google Gemini, LangGraph, FastAPI, Streamlit, and Qdrant**.
+
+The project combines **Retrieval-Augmented Generation (RAG), structured fact extraction, conversational memory, and controlled tool execution** within an Agent Harness architecture.
+
+> **Agent = Language Model + Tools + Memory + Execution + Guardrails + Observability**
 
 ---
 
-## 🛠️ KIẾN TRÚC VÀ CÔNG NGHỆ HỆ THỐNG
+## 🚀 Project Overview
 
-```
-                            +-----------------------------------------------+
-                            |                    HARNESS                    |
-                            |                                               |
-+-------------------+       |  +--------------------+  +-----------------+  |
-| 1. Tools          |<======+==|   FastAPI Backend  |  | 2. Memory       |  |
-| - search_documents|       |  |   (Async REST API) |  | - Qdrant Vector |  |
-| - extract_facts   |       |  +---------+----------+  | - Redis State   |  |
-+-------------------+       |            |             | - Postgres Truth|  |
-                            |            v             +-----------------+  |
-+-------------------+       |  +--------------------+                       |
-| 4. Guardrails     |=======>==|   LLM CORE ENGINE  |                       |
-| - Anti-Injection  |       |  |   (Gemini 2.5 Flash|                       |
-| - Citation Check  |       |  |    + Embeddings)   |                       |
-| - Timeout & Limits|       |  +---------+----------+                       |
-+-------------------+       |            |             +-----------------+  |
-                            |            v             | 3. Môi trường   |  |
-                            |  +--------------------+  | - Docker        |  |
-                            |  | 5. Observability   |  | - Fly.io        |  |
-                            |  | - Trace ID, Latency|  | - LangGraph Run |  |
-                            |  | - Redact Secret Log|  +-----------------+  |
-                            |  +--------------------+                       |
-                            +-----------------------------------------------+
-```
+This application helps users explore documents through a conversational interface while maintaining traceable sources and optional personal memory.
 
-1. **Generative AI & Memory (Bộ nhớ & Tìm kiếm):**
-   - **Google Gemini (gemini-2.5-flash):** Đóng vai trò là hạt nhân suy luận trung tâm, xử lý ngữ cảnh và trích xuất facts.
-   - **Gemini Embeddings (gemini-embedding-001):** Vector hóa tài liệu và bộ nhớ dài hạn.
-   - **Qdrant:** Cơ sở dữ liệu vector chuyên dụng, thực hiện **Semantic Search** và truy xuất tri thức dài hạn (**Long-term Memory**).
-   - **Redis:** Quản lý bộ đệm tìm kiếm (**Retrieval Cache**) và trạng thái phiên làm việc ngắn hạn (**State & Short-term Memory**). Tự động fallback sang PostgreSQL khi Redis gặp sự cố.
-2. **Backend & Deployment (API & Vận hành):**
-   - **FastAPI:** Khung ứng dụng REST API bất đồng bộ hiệu năng cao, kiểm soát quyền truy cập chặt chẽ.
-   - **Docker & Docker Compose:** Đóng gói container chuẩn hóa toàn bộ các dịch vụ (API, UI, PostgreSQL, Qdrant, Redis).
-   - **Fly.io:** Cấu hình triển khai cloud production tách biệt cho Backend (`fly.toml`) và Giao diện (`fly.ui.toml`).
-3. **Database & Testing:**
-   - **PostgreSQL:** Cơ sở dữ liệu quan hệ lưu trữ dữ liệu gốc (*Single Source of Truth*): thông tin người dùng, tài liệu, lịch sử hội thoại và các phiên bản bộ nhớ.
-   - **Streamlit:** Giao diện người dùng trực quan, tích hợp cổng đăng nhập bảo mật và quản trị bộ nhớ tương tác.
-   - **pytest:** Hệ thống kiểm thử tự động toàn diện (Unit & Integration tests).
-   - **GitHub Actions:** Tự động hóa kiểm thử liên tục (CI).
+Users can upload documents, select reference material, ask questions, inspect retrieved excerpts, and explicitly request that the assistant remember information across conversations.
+
+The system separates the interface from the AI backend:
+
+- **Streamlit** handles document uploads, chat interaction, and memory management.
+- **FastAPI** handles authentication, document processing, agent execution, and persistence.
+- **LangGraph** coordinates model calls and tool execution.
+- **Qdrant** stores document vectors for similarity search.
+- **PostgreSQL or SQLite** stores document metadata, conversations, messages, and personal facts.
+- **Redis**, when configured, caches retrieval results and recent conversation context.
+
+This is a portfolio and learning project focused on building a practical document AI application with explicit control over its surrounding infrastructure.
 
 ---
 
-## 📂 CẤU TRÚC DỰ ÁN
+## ✨ Key Features
 
+### 📄 Document Analysis and RAG
+
+- Upload **PDF, TXT, Markdown, PNG, JPG, and JPEG** files.
+- Extract readable document text.
+- Analyze images using Gemini when needed.
+- Optionally analyze all embedded images in a PDF.
+- Split content into overlapping chunks.
+- Generate embeddings and index document chunks in Qdrant.
+- Retrieve relevant content using vector similarity.
+- Answer questions about selected documents.
+- Preserve document names, page numbers, and retrieved excerpts.
+- Display source references for inspection.
+
+### 🛠️ Tool-Based Agent Workflow
+
+- Coordinate reasoning and tool calls through LangGraph.
+- Search authorized document collections.
+- Extract structured facts from retrieved content.
+- Validate tool arguments using defined schemas.
+- Restrict tools to an explicit registry.
+- Limit tool execution rounds.
+- Produce a final response when the tool budget is reached.
+
+### 🧠 Conversational Memory
+
+- Preserve conversation history in relational storage.
+- Extract personal facts when memory is enabled and explicitly requested.
+- Reuse accepted facts across conversations.
+- Avoid duplicate entries for identical facts.
+- Keep conflicting information pending until user confirmation.
+- Track accepted memory revisions.
+- Inspect, accept, reject, or delete memories through the interface.
+
+### 🔒 Access Control and Guardrails
+
+- Authenticate requests using Bearer tokens.
+- Associate tokens with user identities.
+- Check ownership of documents, conversations, and memories.
+- Filter document retrieval by owner and selected document IDs.
+- Apply limits to uploads and agent execution.
+- Treat retrieved documents as reference data rather than trusted instructions.
+- Validate cited source IDs against retrieved sources.
+
+### 📊 Observability
+
+- Assign trace IDs to agent requests.
+- Record model and tool execution events.
+- Report elapsed processing time.
+- Include token usage when returned by the model.
+- Display execution details in the interface.
+- Log failures for backend diagnosis.
+
+---
+
+## 🛠️ Tech Stack
+
+| Category | Technologies |
+|---|---|
+| Programming Language | Python 3.11 |
+| LLM and Image Understanding | Google Gemini |
+| Agent Orchestration | LangGraph |
+| LLM Integration | LangChain components |
+| Backend API | FastAPI, Uvicorn |
+| Data Validation | Pydantic |
+| Frontend | Streamlit |
+| Relational Storage | PostgreSQL, SQLite, SQLAlchemy |
+| Vector Store | Qdrant |
+| Embeddings | Gemini Embeddings |
+| Cache and Session Context | Redis |
+| Document Processing | PyPDF, Pillow |
+| Testing | pytest |
+| Containerization | Docker, Docker Compose |
+| Deployment Configuration | Fly.io |
+| Version Control and CI | Git, GitHub, GitHub Actions |
+
+Model names are configurable. Availability, supported features, and usage limits depend on the configured Google project.
+
+---
+
+## 🏗️ System Architecture
+
+```mermaid
+flowchart TB
+    UI["Streamlit Interface"] --> API["FastAPI Backend"]
+
+    API --> AUTH["Authentication and Ownership Checks"]
+    AUTH --> INGEST["Document Processing"]
+    AUTH --> AGENT["LangGraph Agent"]
+
+    INGEST --> EMBED["Gemini Embeddings"]
+    EMBED --> VECTOR["Qdrant Document Index"]
+
+    AGENT <--> LLM["Gemini"]
+    AGENT --> TOOLS["Document Search and Fact Extraction"]
+    TOOLS --> VECTOR
+    TOOLS <--> CACHE["Redis Retrieval Cache"]
+
+    API <--> SQL["PostgreSQL or SQLite"]
+    API <--> SESSION["Redis Session Context"]
+
+    API --> MEMORY["Personal Fact Extraction and Memory Merge"]
+    MEMORY --> SQL
+    MEMORY --> MVECTOR["Qdrant Memory Index"]
+
+    AGENT --> TRACE["Execution Logs and Traces"]
 ```
+
+### Agent Harness Components
+
+| Component | Responsibility |
+|---|---|
+| **Language Model** | Generate answers, interpret visual content, and extract structured information |
+| **Tools** | Retrieve authorized document content and extract facts |
+| **Memory** | Persist conversation history and accepted personal information |
+| **Execution Environment** | Run the LangGraph workflow through the FastAPI backend |
+| **Guardrails** | Enforce authentication, ownership, input limits, tool limits, and citation checks |
+| **Observability** | Record trace IDs, execution events, elapsed time, and usage metadata |
+
+The execution environment runs application workflows. It does not provide arbitrary execution of code generated by the model.
+
+---
+
+## 🔄 Core Workflows
+
+### 1. Document Ingestion
+
+1. Authenticate the user.
+2. Validate the uploaded file.
+3. Extract text and relevant visual information.
+4. Split content into chunks.
+5. Generate embeddings.
+6. Store vectors and source metadata in Qdrant.
+7. Update the document status in relational storage.
+
+For text-based PDFs, full image analysis can remain disabled to reduce additional model calls.
+
+### 2. Document Question Answering
+
+1. Verify conversation and document ownership.
+2. Load recent conversation history.
+3. Load accepted personal facts.
+4. Run the LangGraph agent.
+5. Retrieve relevant document chunks when the agent calls a search tool.
+6. Generate an answer using the available context.
+7. Validate cited source IDs.
+8. Save the conversation turn and source references.
+
+Uploading a file and selecting it for a question are separate actions.
+
+### 3. Fact Extraction and Memory Merge
+
+When personal memory is enabled:
+
+| Incoming Information | Behavior |
+|---|---|
+| New fact | Create a memory entry |
+| Identical fact | Keep the existing value |
+| Conflicting fact | Store a pending value for confirmation |
+| Accepted update | Replace the current value and record a revision |
+| Rejected update | Keep the current value |
+| Delete request | Remove the memory record and attempt vector cleanup |
+
+Personal memory extraction is separate from document fact extraction. Document content should not automatically become a personal fact about the user.
+
+Relational storage holds the authoritative memory values. Qdrant memory indexing is implemented, but synchronization and retrieval integration have limitations described below.
+
+---
+
+## 📂 Project Structure
+
+```text
 chatbot/
-├── app.py                      # Giao diện Streamlit (Xác thực, Hỏi đáp RAG, Quản lý Bộ nhớ)
-├── requirements.txt            # Thư viện Python phụ thuộc
-├── .env.example                # Mẫu cấu hình môi trường chuẩn
-├── .env                        # File cấu hình riêng (được bảo vệ bởi .gitignore)
-├── .gitignore                  # Ngăn chặn rò rỉ khóa, thư mục ảo và dữ liệu tải lên
-├── .dockerignore               # Tối ưu kích thước container build
-├── Dockerfile                  # Đóng gói backend FastAPI & giao diện Streamlit
-├── compose.yaml                # Cấu hình đa dịch vụ: API, UI, PostgreSQL, Redis, Qdrant
-├── fly.toml                    # Cấu hình triển khai Backend lên Fly.io
-├── fly.ui.toml                 # Cấu hình triển khai UI Streamlit lên Fly.io
-├── pytest.ini                  # Cấu hình môi trường chạy kiểm thử pytest
-├── README.md                   # Tài liệu hướng dẫn chi tiết
+├── app.py                       # Streamlit interface
+├── requirements.txt             # Python dependencies
+├── .env.example                 # Environment configuration template
+├── .gitignore
+├── .dockerignore
+├── Dockerfile
+├── compose.yaml                 # API, UI, PostgreSQL, Qdrant, Redis
+├── fly.toml                     # Backend deployment configuration
+├── fly.ui.toml                  # UI deployment configuration
+├── pytest.ini
+├── README.md
 │
-├── backend/                    # Mã nguồn hạt nhân Backend
+├── backend/
 │   ├── __init__.py
-│   ├── main.py                 # Khởi tạo FastAPI, quản lý Lifespan, Health checks
-│   ├── config.py               # Đọc và xác thực cấu hình qua Pydantic Settings
-│   ├── auth.py                 # Xác thực Bearer Token bảo mật (constant-time check)
-│   ├── database.py             # Kết nối PostgreSQL / SQLite engine & session factory
-│   ├── models.py               # Bảng SQLAlchemy (Document, Conversation, Message, Memory)
-│   ├── schemas.py              # Schema Pydantic kiểm tra request & response
+│   ├── main.py                  # FastAPI application and lifecycle
+│   ├── config.py                # Settings and environment loading
+│   ├── auth.py                  # Bearer-token authentication
+│   ├── database.py              # SQL engine and session management
+│   ├── models.py                # Relational data models
+│   ├── schemas.py               # Request and response schemas
 │   │
-│   ├── api/                    # Các Router API
+│   ├── api/
 │   │   ├── __init__.py
-│   │   ├── deps.py             # Dependencies (Khóa độc quyền ghi, kiểm tra quyền sở hữu)
-│   │   ├── documents.py        # Tải lên, phân tích chunk, lập chỉ mục và xóa tài liệu
-│   │   ├── conversations.py    # Quản lý cuộc hội thoại và lịch sử tin nhắn
-│   │   ├── chat.py             # Endpoint hỏi đáp chính gọi Agent Harness
-│   │   └── memories.py         # Quản trị bộ nhớ dài hạn, giải quyết xung đột thông tin
+│   │   ├── deps.py              # Ownership and operation dependencies
+│   │   ├── documents.py         # Upload, list, and delete documents
+│   │   ├── conversations.py     # Conversations and message history
+│   │   ├── chat.py              # Agent execution endpoint
+│   │   └── memories.py          # Memory management endpoints
 │   │
-│   ├── agent/                  # Thành phần trí tuệ nhân tạo (LangGraph Agent)
+│   ├── agent/
 │   │   ├── __init__.py
-│   │   ├── prompts.py          # System prompt định nghĩa vai trò & quy tắc Harness
-│   │   ├── state.py            # Khai báo schema trạng thái LangGraph
-│   │   ├── tools.py            # Công cụ tìm kiếm ngữ nghĩa và trích xuất facts
-│   │   ├── graph.py            # Đồ thị StateGraph suy luận vòng lặp có kiểm soát
-│   │   └── guardrails.py       # Hàng rào bảo vệ (Anti-Prompt Injection, Citation Verification)
+│   │   ├── prompts.py           # Runtime instructions
+│   │   ├── state.py             # Graph state
+│   │   ├── tools.py             # Tool definitions
+│   │   ├── graph.py             # LangGraph workflow
+│   │   └── guardrails.py        # Input and citation validation
 │   │
-│   └── services/               # Các tầng dịch vụ chuyên biệt
+│   └── services/
 │       ├── __init__.py
-│       ├── gemini.py           # Kết nối Gemini LLM, Embeddings, Multimodal Vision
-│       ├── ingestion.py        # Đọc PDF, Text, Markdown, Image OCR và chia chunks
-│       ├── vectors.py          # Qdrant client: Semantic search tài liệu & bộ nhớ vector
-│       ├── cache.py            # Redis Cache kết quả tìm kiếm ngữ nghĩa
-│       ├── sessions.py         # Quản lý context ngắn hạn (Redis cache + PostgreSQL fallback)
-│       ├── facts.py            # Trích xuất sự thật có cấu trúc qua Structured Output
-│       ├── memory.py           # Hợp nhất bộ nhớ, theo dõi phiên bản và phát hiện xung đột
-│       └── observability.py    # Ghi nhận log, Trace ID, đo lường thời gian không lộ bí mật
+│       ├── gemini.py            # LLM, embeddings, and image processing
+│       ├── ingestion.py         # Document parsing and chunking
+│       ├── vectors.py           # Qdrant operations
+│       ├── cache.py             # Retrieval cache
+│       ├── sessions.py          # Recent conversation context
+│       ├── facts.py             # Fact extraction support
+│       ├── memory.py            # Memory merge and revisions
+│       └── observability.py     # Execution traces
 │
-├── tests/                      # Bộ kiểm thử tự động toàn diện
+├── tests/
 │   ├── __init__.py
-│   ├── conftest.py             # Fixture SQLite in-memory, mock LLM, Qdrant client
-│   ├── mocks.py                # Lớp Mock Gemini, Mock Embeddings phục vụ test độc lập
-│   ├── test_auth.py            # Kiểm thử xác thực token và từ chối 401
-│   ├── test_documents.py       # Kiểm thử tải lên, kiểm tra định dạng và xóa tài liệu
-│   ├── test_retrieval.py       # Kiểm thử vector search và khả năng chịu lỗi của Cache
-│   ├── test_memory.py          # Kiểm thử logic mâu thuẫn bộ nhớ, giải quyết và revision
-│   └── test_agent.py           # Kiểm thử luồng LangGraph Agent và hàng rào bảo vệ
+│   ├── conftest.py
+│   ├── mocks.py
+│   ├── test_auth.py
+│   ├── test_documents.py
+│   ├── test_retrieval.py
+│   ├── test_memory.py
+│   └── test_agent.py
 │
 └── .github/
     └── workflows/
-        └── ci.yml              # Quy trình CI tự động chạy pytest trên GitHub Actions
+        └── ci.yml
 ```
 
----
-
-## 📋 QUY TRÌNH HOẠT ĐỘNG 6 BƯỚC
-
-1. **Đăng nhập:** Người dùng nhập Access token tại giao diện. Hệ thống xác thực token qua endpoint `/auth/verify` thành công trước khi hiển thị bất kỳ tính năng nào khác. Không bao giờ tắt xác thực để né lỗi 401.
-2. **Nhập tài liệu:** Kiểm tra định dạng (PDF, TXT, MD, PNG, JPG), giới hạn kích thước -> trích xuất nội dung văn bản (kèm tùy chọn OCR hình ảnh) -> phân chia chunks -> tạo embeddings -> lưu trữ vector lên Qdrant và metadata lên PostgreSQL.
-3. **Hỏi đáp RAG:** Xác thực request -> lấy ngữ cảnh hội thoại từ Redis (fallback về PostgreSQL nếu Redis lỗi) -> nạp bộ nhớ dài hạn liên quan -> LangGraph kích hoạt vòng lặp suy luận gọi công cụ tìm kiếm Qdrant -> Gemini trả lời kèm trích dẫn nguồn `[source:<source_id>]` được xác thực bởi Guardrails.
-4. **Ghi nhớ (Memory):** Khi người dùng kích hoạt tùy chọn ghi nhớ (`remember=True`), hệ thống trích xuất facts có cấu trúc từ câu hỏi -> so sánh với bộ nhớ hiện có:
-   - Nếu là thông tin mới: thêm vào bộ nhớ (phiên bản v1).
-   - Nếu trùng khớp: giữ nguyên.
-   - Nếu xuất hiện mâu thuẫn: **không ghi đè**, đưa vào trạng thái `pending_value` và gửi cảnh báo yêu cầu người dùng xác nhận ở tab Bộ nhớ.
-5. **Đồng bộ bộ nhớ:** PostgreSQL giữ vai trò là dữ liệu chính (*Source of Truth*); Qdrant lập chỉ mục các bộ nhớ đã được xác nhận để phục vụ tìm kiếm ngữ nghĩa. Tuyệt đối không truy xuất bản ghi đã xóa hoặc chưa xác nhận.
-6. **Theo dõi (Observability):** Mỗi yêu cầu được gán một `Trace ID` duy nhất, ghi lại thời gian xử lý từng chặng và trạng thái hoàn thành. Không bao giờ ghi API key, Access token hay nội dung bí mật vào log.
+Local credentials, uploaded files, databases, and Python environments should remain outside version control.
 
 ---
 
-## 🔒 NGUYÊN TẮC CỐT LÕI CỦA BẢN MỚI
+## ⚙️ Installation
 
-- **Tách biệt khóa:** Access token (xác thực người dùng) và Google Gemini API key (gọi mô hình AI) là hai khóa hoàn toàn độc lập.
-- **Bảo mật tuyệt đối:** Không đưa `.env`, tài liệu người dùng tải lên hoặc môi trường Python lên GitHub.
-- **Tối ưu OCR:** Chỉ đọc ảnh trong PDF khi người dùng yêu cầu phân tích toàn bộ ảnh, tiết kiệm chi phí và tăng tốc độ xử lý.
-- **Khả năng chịu lỗi cao (Fault Tolerance):** Nếu Redis gặp sự cố, hệ thống tự động đọc lịch sử hội thoại trực tiếp từ PostgreSQL mà không làm gián đoạn người dùng.
-- **Giới hạn an toàn (Harness Guardrails):** Cấu hình chặt chẽ thời gian chờ gọi AI (`llm_timeout`), số lần thử lại tối đa (`max_retries`), số vòng gọi công cụ (`max_tool_rounds`) và số lượng tool call trong mỗi vòng (tối đa 4).
-- **Chống Prompt Injection:** Toàn bộ tài liệu và bộ nhớ được xem là dữ liệu tham khảo, tuyệt đối không cho phép ghi đè các chỉ dẫn điều khiển hệ thống.
-- **Kiểm soát xung đột:** Mọi thông tin bộ nhớ mâu thuẫn bắt buộc phải được người dùng xác nhận trước khi thay thế.
+### Requirements
 
----
+- Python 3.11
+- A Google Gemini API key
+- A generation model available to your Google project
+- Docker and Docker Compose for the containerized configuration
 
-## 🚀 HƯỚNG DẪN CÀI ĐẶT & CHẠY ỨNG DỤNG
+### 1. Clone the Repository
 
-### 1. Chuẩn bị môi trường & Cấu hình
+```bash
+git clone https://github.com/trongquy1811/chatbot.git
+cd chatbot
+```
 
-Sao chép file cấu hình mẫu và điền các khóa cần thiết:
+### 2. Create a Virtual Environment
+
+**Windows PowerShell**
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+**Linux / macOS**
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+### 3. Create the Environment File
+
+If `.env` does not already exist:
+
+**Windows**
+
+```powershell
+Copy-Item .env.example .env
+```
+
+**Linux / macOS**
 
 ```bash
 cp .env.example .env
 ```
 
-Chỉnh sửa file `.env`:
-```env
-GOOGLE_API_KEY=your_gemini_api_key_here
-API_KEYS_JSON={"my_secret_token_0123456789abcdef": "admin_user"}
-```
-
-### 2. Chạy toàn bộ hệ thống bằng Docker Compose (Khuyên dùng)
-
-Chạy tất cả 5 dịch vụ (FastAPI, Streamlit UI, PostgreSQL, Redis, Qdrant) chỉ với 1 lệnh:
-
-```bash
-docker compose up -d --build
-```
-
-- **Backend API:** `http://localhost:8000/docs` (Swagger UI)
-- **Frontend Streamlit:** `http://localhost:8501`
-
-### 3. Chạy cục bộ (Local Development)
-
-#### Cách 1: Khởi động nhanh cả Backend và UI bằng 1 lệnh duy nhất (Khuyên dùng)
-```bash
-python run.py
-```
-*(Trên Windows, bạn cũng có thể nhấp đúp trực tiếp vào file `start.bat`)*
-
-Script sẽ tự động khởi động FastAPI Backend (port 8000), kiểm tra health check, sau đó mở Streamlit UI (port 8501).
-
-#### Cách 2: Khởi động thủ công riêng biệt
-```bash
-# 1. Cài đặt thư viện (nếu chưa cài)
-pip install -r requirements.txt
-
-# 2. Khởi chạy Backend API (Terminal 1)
-uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
-
-# 3. Khởi chạy Giao diện Streamlit (Terminal 2)
-streamlit run app.py
-```
+Do not overwrite an existing `.env` containing your configuration.
 
 ---
 
-## 🧪 CHẠY KIỂM THỬ TỰ ĐỘNG (PYTEST)
+## 🔑 Configuration
 
-Dự án đi kèm bộ kiểm thử tự động toàn diện, chạy độc lập mà không cần kết nối mạng hay khóa Gemini thật:
+Edit `.env` and configure the required credentials:
 
-```bash
-pytest tests/ -v
+```dotenv
+# Google AI
+GOOGLE_API_KEY=your_google_api_key
+GEMINI_MODEL=your_available_generation_model
+EMBEDDING_MODEL=models/gemini-embedding-001
+
+# Application authentication
+API_KEYS_JSON='{"replace_with_a_private_random_token_at_least_24_characters":"quy"}'
+
+# Local relational storage
+DATABASE_URL=sqlite:///./data/docanalyzer.db
+DATA_DIR=data
+
+# Qdrant: leave URL empty for local storage
+QDRANT_URL=
+QDRANT_API_KEY=
+QDRANT_COLLECTION=documents_v1
+QDRANT_MEMORY_COLLECTION=memories_v1
+
+# Optional Redis for local development
+REDIS_URL=
+
+# UI connection
+API_BASE_URL=http://127.0.0.1:8000
+
+# Docker Compose PostgreSQL password
+POSTGRES_PASSWORD=replace_with_a_strong_password
+
+# Processing limits
+MAX_UPLOAD_MB=10
+MAX_PDF_PAGES=30
+MAX_CHUNKS=500
+MAX_TOOL_ROUNDS=3
+LLM_TIMEOUT=45
+MAX_RETRIES=1
+OCR_PDF_IMAGES=false
 ```
 
-Kết quả kiểm thử:
+Replace `your_available_generation_model` with a model that supports the application's generation, tool-calling, and structured-output requirements.
+
+### Generate an Application Access Token
+
+```powershell
+.\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Use the generated value as the token key inside `API_KEYS_JSON`.
+
+### Credential Roles
+
+| Setting | Purpose |
+|---|---|
+| `GOOGLE_API_KEY` | Allows the backend to call Gemini |
+| `API_KEYS_JSON` | Maps application Access tokens to user identities |
+| `QDRANT_API_KEY` | Authenticates access to a protected Qdrant service |
+| `POSTGRES_PASSWORD` | Configures PostgreSQL in Docker Compose |
+
+The application Access token is not the Gemini API key.
+
+The local interface can prefill an application token from `.env` when configured for local use. Disable automatic prefilling before exposing the UI to public visitors.
+
+---
+
+## ▶️ Run Locally
+
+The default local configuration uses **SQLite and Qdrant local storage**. Redis remains optional.
+
+### Terminal 1: Backend
+
+Run from the repository root:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+```
+
+Keep this terminal running.
+
+### Terminal 2: Interface
+
+```powershell
+$env:API_BASE_URL = "http://127.0.0.1:8000"
+.\.venv\Scripts\python.exe -m streamlit run app.py
+```
+
+For Linux or macOS:
+
+```bash
+# Terminal 1
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+
+# Terminal 2
+API_BASE_URL=http://127.0.0.1:8000 python -m streamlit run app.py
+```
+
+### Local Addresses
+
+| Service | Address |
+|---|---|
+| Streamlit UI | http://localhost:8501 |
+| API Documentation | http://127.0.0.1:8000/docs |
+| Health Check | http://127.0.0.1:8000/health |
+| Readiness Check | http://127.0.0.1:8000/ready |
+
+Run only one backend process against a Qdrant local storage directory.
+
+---
+
+## 🐳 Run with Docker Compose
+
+Docker Compose provides the following services:
+
+| Service | Responsibility |
+|---|---|
+| `api` | FastAPI backend |
+| `ui` | Streamlit interface |
+| `postgres` | Relational persistence |
+| `qdrant` | Vector storage |
+| `redis` | Retrieval cache and session context |
+
+Configure `.env`, then start the stack:
+
+```bash
+docker compose up --build -d
+```
+
+Compose overrides the API's local storage URLs to connect to PostgreSQL, Qdrant, and Redis inside the container network.
+
+The UI connects to the backend using:
+
 ```text
-tests/test_agent.py::test_sanitize_reference_content PASSED              [  5%]
-tests/test_agent.py::test_validate_citations PASSED                      [ 10%]
-tests/test_agent.py::test_chat_endpoint_integration PASSED               [ 15%]
-tests/test_agent.py::test_agent_run_execution PASSED                     [ 21%]
-tests/test_auth.py::test_auth_missing_token PASSED                       [ 26%]
-tests/test_auth.py::test_auth_invalid_token PASSED                       [ 31%]
-tests/test_auth.py::test_auth_valid_token PASSED                         [ 36%]
-tests/test_auth.py::test_protected_routes_require_auth PASSED            [ 42%]
-tests/test_documents.py::test_upload_text_document PASSED                [ 47%]
-tests/test_documents.py::test_list_documents PASSED                      [ 52%]
-tests/test_documents.py::test_upload_empty_document PASSED               [ 57%]
-tests/test_documents.py::test_upload_unsupported_format PASSED           [ 63%]
-tests/test_documents.py::test_delete_document PASSED                     [ 68%]
-tests/test_memory.py::test_memory_add_new_fact PASSED                    [ 73%]
-tests/test_memory.py::test_memory_conflict_handling_and_resolution PASSED [ 78%]
-tests/test_memory.py::test_delete_memory PASSED                          [ 84%]
-tests/test_retrieval.py::test_vectors_add_and_search PASSED              [ 89%]
-tests/test_retrieval.py::test_retrieval_cache_fallback PASSED            [ 94%]
-tests/test_retrieval.py::test_retrieval_cache_redis_error_resilience PASSED [100%]
-============================= 19 passed in 1.00s ==============================
+http://api:8000
 ```
+
+Inspect service status and logs:
+
+```bash
+docker compose ps
+docker compose logs -f api
+```
+
+Stop the stack:
+
+```bash
+docker compose down
+```
+
+Named volumes preserve SQL data, vector data, and uploaded originals. Adding `-v` to the shutdown command deletes the named volumes.
 
 ---
 
-## ☁️ TRIỂN KHAI LÊN CLOUD (FLY.IO)
+## 💬 Usage
 
-Hệ thống đã chuẩn bị sẵn file cấu hình riêng biệt:
+### Document Question Answering
 
-1. **Triển khai Backend API:**
-   ```bash
-   fly launch --config fly.toml
-   fly secrets set GOOGLE_API_KEY="your_key" API_KEYS_JSON='{"token...": "user"}' DATABASE_URL="postgres://..."
-   fly deploy --config fly.toml
-   ```
+1. Authenticate with an application Access token.
+2. Upload a supported document.
+3. Wait until processing completes.
+4. Select the document under **Documents for this question**.
+5. Submit a question.
+6. Inspect the answer and source references.
 
-2. **Triển khai Giao diện Streamlit:**
-   ```bash
-   fly launch --config fly.ui.toml
-   fly secrets set API_BASE_URL="https://your-backend-app.fly.dev"
-   fly deploy --config fly.ui.toml
-   ```
+Example questions:
+
+```text
+Summarize the main content of this document.
+
+What technologies are used in the project?
+
+Extract the important dates and explain their context.
+
+What conclusions are supported by the document?
+```
+
+For PDFs with readable text, leave full image analysis disabled unless the question requires visual content.
+
+### Personal Memory
+
+Enable the memory option and submit:
+
+```text
+Please remember that my name is Quy.
+```
+
+Verify the saved entry in the Memory tab.
+
+Create a new conversation and ask:
+
+```text
+What is my name?
+```
+
+To test conflict handling:
+
+```text
+Please update my name to Nguyen Trong Quy.
+```
+
+Inspect the pending value in the Memory tab, then accept or reject it.
+
+An assistant acknowledgment does not by itself confirm successful persistence. Check the stored memory entry.
+
+---
+
+## 🌐 API Reference
+
+Authenticated endpoints use:
+
+```http
+Authorization: Bearer <application_access_token>
+```
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/health` | Application liveness |
+| GET | `/ready` | SQL and Qdrant connectivity check |
+| GET | `/auth/verify` | Verify Access token |
+| POST | `/documents` | Upload and process a document |
+| GET | `/documents` | List owned documents |
+| DELETE | `/documents/{document_id}` | Delete an owned document |
+| POST | `/conversations` | Create a conversation |
+| GET | `/conversations` | List owned conversations |
+| GET | `/conversations/{conversation_id}/messages` | Retrieve message history |
+| POST | `/chat` | Run the agent |
+| GET | `/memories` | List personal memories |
+| POST | `/memories/{memory_id}/resolve` | Accept or reject a pending update |
+| DELETE | `/memories/{memory_id}` | Delete a memory |
+
+Example chat request:
+
+```json
+{
+  "question": "Summarize the selected document.",
+  "conversation_id": "<conversation_id>",
+  "document_ids": ["<document_id>"],
+  "remember": false
+}
+```
+
+See `/docs` for complete request and response schemas.
+
+The readiness endpoint does not validate Gemini availability or remaining quota.
+
+---
+
+## 🧪 Testing and Continuous Integration
+
+Run the tests:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests -v
+```
+
+The test suite includes coverage for:
+
+- Authentication behavior
+- Protected routes
+- Document upload, listing, and deletion
+- Retrieval operations
+- Cache fallback behavior
+- Agent execution and citation checks
+- Memory creation, conflicts, resolution, and deletion
+
+AI substitutes are used in test fixtures to avoid live Gemini calls.
+
+GitHub Actions is configured to run the test suite on pushes and pull requests targeting `main`.
+
+Check the actual test output and CI results for the current commit. Mock-based tests do not establish live-service availability or deployment correctness.
+
+---
+
+## ☁️ Fly.io Deployment
+
+The repository includes separate deployment configurations:
+
+| File | Target |
+|---|---|
+| `fly.toml` | FastAPI backend |
+| `fly.ui.toml` | Streamlit interface |
+
+Before deployment:
+
+- Choose unique application names.
+- Configure credentials through deployment secrets.
+- Set the UI's `API_BASE_URL` to the backend HTTPS address.
+- Configure PostgreSQL, Qdrant, and Redis connections.
+- Verify volume ownership and write permissions.
+- Use Qdrant server for shared or multi-process access.
+- Verify startup commands, health checks, and persistent storage.
+- Disable local automatic token prefilling for public access.
+
+Configuration files are provided as a starting point. A successful live deployment is not implied.
+
+---
+
+## 🔍 Troubleshooting
+
+| Issue | Explanation and Action |
+|---|---|
+| Connection refused / WinError 10061 | Start the backend and verify the configured host and port |
+| `401 Unauthorized` | Check the application token and restart the backend after configuration changes |
+| Qdrant storage already accessed | Stop the other process using the local storage directory |
+| Gemini `404 NOT_FOUND` | Verify model availability for the configured project |
+| Gemini `503 UNAVAILABLE` | The upstream AI service is temporarily unavailable |
+| Gemini `429 RESOURCE_EXHAUSTED` | Inspect the quota metric and retry delay |
+| Generic API `502` | Find the corresponding trace ID in backend logs |
+| Answer saved but memory failed | The later extraction or memory update failed after the answer was saved |
+| Slow PDF processing | Disable full image analysis when readable text is sufficient |
+| No document context | Select a processed document before submitting the question |
+
+Repeated short retries do not resolve an exhausted daily quota. Creating another API key in the same Google project does not reset that project's quota.
+
+---
+
+## ⚠️ Current Limitations
+
+- AI requests depend on model availability and project quotas.
+- Some upstream errors are currently returned as generic `502` responses.
+- Chat currently loads personal facts from SQL rather than using semantic memory retrieval.
+- Qdrant memory revisions need stable point IDs to prevent older vector entries from accumulating.
+- SQL and Qdrant updates are not atomic; automated synchronization recovery is not yet implemented.
+- Blocking document processing inside the asynchronous upload handler needs to be moved off the event loop.
+- The operation lock coordinates one backend process, not multiple workers.
+- Citation validation checks source IDs rather than proving every generated claim.
+- Prompt guardrails reduce risk but cannot guarantee complete resistance to malicious content.
+- Database migrations and broader live-service integration checks remain future work.
+
+---
+
+## 🔮 Future Improvements
+
+- Quota-aware error responses and retry handling
+- Stable vector IDs and recoverable memory synchronization
+- Semantic memory retrieval validated against SQL records
+- Background document processing
+- Database migrations
+- Hybrid retrieval and reranking
+- Retrieval and answer-quality evaluation
+- Expanded ownership and isolation tests
+- Live-service integration tests
+- Verified Fly.io deployment
+- Centralized monitoring and metrics
+
+---
+
+## 👨‍💻 Author
+
+**Nguyen Trong Quy**
+
+Computer Science Graduate · AI Engineering Portfolio
+
+- GitHub: [@trongquy1811](https://github.com/trongquy1811)
+- Repository: [Agent Harness Document AI Chatbot](https://github.com/trongquy1811/chatbot)
+
+---
+
+## 📄 License
+
+This project is developed for educational and portfolio purposes.
+
+No standalone license is currently declared. Add a `LICENSE` file to define reuse and distribution terms.
