@@ -11,8 +11,7 @@
 
 An enterprise-grade intelligent Document AI Assistant engineered with the **Agent Harness Architecture**. 
 ## 🎬 Demo
-
-https://github.com/user-attachments/assets/779de0da-1610-4ede-9f4c-ff2323f18892
+<img width="800" height="450" alt="demo" src="https://github.com/user-attachments/assets/05d2329c-198b-49fe-9eb8-6920ad239f48" />
 Unlike naive RAG pipelines that merely concatenate raw text into LLM prompts, this system encapsulates the foundational reasoning engine (**Google Gemini LLM**) within an operational infrastructure (**Harness**), providing strict bounds, runtime guarantees, and production resilience:
 
 > **Agent Harness = LLM Core + Typed Tools + Dual Memory + Execution Environment + Guardrails + Observability**
