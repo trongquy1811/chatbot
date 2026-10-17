@@ -10,7 +10,9 @@
 [![Tests](https://img.shields.io/badge/Tests-20%2F20%20Passed-brightgreen)](tests/)
 
 An enterprise-grade intelligent Document AI Assistant engineered with the **Agent Harness Architecture**. 
+## 🎬 Demo
 
+https://github.com/user-attachments/assets/779de0da-1610-4ede-9f4c-ff2323f18892
 Unlike naive RAG pipelines that merely concatenate raw text into LLM prompts, this system encapsulates the foundational reasoning engine (**Google Gemini LLM**) within an operational infrastructure (**Harness**), providing strict bounds, runtime guarantees, and production resilience:
 
 > **Agent Harness = LLM Core + Typed Tools + Dual Memory + Execution Environment + Guardrails + Observability**
